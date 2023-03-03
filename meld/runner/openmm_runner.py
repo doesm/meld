@@ -20,9 +20,12 @@ import numpy as np  # type: ignore
 from typing import Optional, List, Dict
 import random
 import math
+import os
+from genericpath import exists
+import fnmatch
 
 from meld.vault import ENERGY_GROUPS
-
+import time
 logger = logging.getLogger(__name__)
 
 
@@ -220,8 +223,14 @@ class OpenMMRunner(interfaces.IRunner):
                 self._simulation.integrator.setGlobalVariableByName(
                     "kT", self._temperature * GAS_CONSTANT
                 )
-            else:
+            elif hasattr(self._integrator, 'setTemperature'): 
                 self._integrator.setTemperature(self._temperature)
+            elif self._options.enable_gamd == True:
+                thermal_energy = self._temperature * \
+                    u.BOLTZMANN_CONSTANT_kB * u.AVOGADRO_CONSTANT_NA
+                self._simulation.integrator.setGlobalVariableByName(
+                    "thermal_energy", thermal_energy)
+
             if self._barostat:
                 self._simulation.context.setParameter(
                     self._barostat.Temperature(), self._temperature
@@ -433,13 +442,18 @@ class OpenMMRunner(interfaces.IRunner):
                 f"Ending maximum force norm {post_max:.3f} on particle {post_index}."
             )
 
-        # set the velocities
-        # check to see if velocities initialized to zero
-        if np.all(velocities._value == 0.0):
-            logger.info("All velocities are zero, this is likely because input files do not contain velocity info. Generating velocities from Maxwell-Boltzmann distribution")
-            self._simulation.context.setVelocitiesToTemperature(self._temperature)
+        if self._options.enable_gamd == True:
+            # Set the velocities for GaMD
+            self._simulation.context.setVelocitiesToTemperature(
+                self._temperature)
         else:
-            self._simulation.context.setVelocities(velocities)
+            # set the velocities
+            # check to see if velocities initialized to zero
+            if np.all(velocities._value == 0.0):
+                logger.info("All velocities are zero, this is likely because input files do not contain velocity info. Generating velocities from Maxwell-Boltzmann distribution")
+                self._simulation.context.setVelocitiesToTemperature(self._temperature)
+            else:
+                self._simulation.context.setVelocities(velocities)
 
         # run timesteps
         self._simulation.step(self._options.timesteps)
@@ -479,6 +493,126 @@ class OpenMMRunner(interfaces.IRunner):
             / self._temperature
         )
 
+        if self._options.enable_gamd == True:           
+            # Check if total and dihedral threshold energy variables exist.
+            threshold_energy_Total = 0
+            for i in range(self._simulation.integrator.getNumGlobalVariables()):
+                if self._simulation.integrator.getGlobalVariableName(i) == "threshold_energy_Total":
+                    threshold_energy_Total = self._simulation.integrator.getGlobalVariable(i)
+                    logger.debug(f"threshold_energy_Total: {threshold_energy_Total}")
+                # elif self._simulation.integrator.getGlobalVariableName(i) == "threshold_energy_Dihedral":
+                #     threshold_energy_Dihedral_ndx = i
+                #     logger.debug(f"threshold_energy_Dihedral: {self._simulation.integrator.getGlobalVariableByName("threshold_energy_Dihedral")}")
+
+            thermal_energy = self._simulation.integrator.getGlobalVariableByName("thermal_energy")
+            logger.debug(f"thermal_energy: {thermal_energy}")
+            gamd_energy_filename = os.path.join(
+                "Logs", f"gamd_{self._rank:03d}.log")
+            if exists(gamd_energy_filename):
+                write_mode = "a"
+            else:
+                write_mode = "w"
+                with open(gamd_energy_filename, write_mode) as energy_file:
+                    energy_file.write('# step e_potential')
+            with open(gamd_energy_filename, write_mode) as energy_file:
+                write_line = "{0:} {1:.2f}\n".format(self._timestep,
+                                                     e_potential)
+                energy_file.write(write_line)
+            if self._timestep == (self._options.ntcmd / self._options.timesteps) and threshold_energy_Total != 0:
+                ener = []
+                with open(gamd_energy_filename, "r") as file:
+                    for line in file:
+                        line_split = line.split()
+                        if not line_split[0] == "#":
+                            if int(line_split[0]) > (self._options.ntcmdprep /
+                                                     self._options.timesteps):
+                                ener.append(float(line_split[1]))
+                sd = np.std(ener) * GAS_CONSTANT * self._temperature
+                sd_filename = os.path.join("Logs", f"sd_cmd_{self._rank:03d}.txt")
+
+                with open(sd_filename, 'w') as sd_file:
+                    write_line = "{0:03d} {1:.2f} {2:.2f} {3:.2f}\n".format(
+                        self._rank, sd, threshold_energy_Total, self._temperature)
+                    sd_file.write(write_line)
+                count = 0
+                timeout = 0
+                while count != self._options.n_replicas: # add timeout
+                    if timeout > 1200:
+                        raise RuntimeError(f"The length of sd_cmd files differs from the number of replicas.")
+                    time.sleep(5)
+                    timeout = timeout + 5
+                    count = len(fnmatch.filter(os.listdir("Logs"), 'sd_cmd_*.*'))
+                    logger.debug(f"while 1: {count}")
+                # with open(sd_filename, 'r') as sd_file:
+                #     n_lines = len(sd_file.readlines())
+                sd_master =  os.path.join("Logs", "sd_cmd.txt")
+                with open(sd_master, 'w') as sd_master_file:
+                    for i in range(self._options.n_replicas):
+                        sd_filename = os.path.join("Logs", f"sd_cmd_{i:03d}.txt")
+                        with open(sd_filename, 'r') as sd_file:
+                            sd_master_file.write(sd_file.readline())
+                time.sleep(5)
+                sd_acum = 0
+                temps = np.loadtxt(sd_master, dtype=np.dtype(
+                    [('w', int), ('x', float), ('y', float), ('z', float)]))
+                ref_threshold = 0
+                for i in np.flip(np.argsort(temps)):
+                    if ref_threshold == 0:
+                        ref_threshold = temps[i][2]
+                    else:
+                        sd_acum = sd_acum + temps[i][1] / 2
+                        if temps[i][0] == self._rank:
+                            new_threshold = (ref_threshold - sd_acum)
+                            self._simulation.integrator.setGlobalVariableByName(
+                                "threshold_energy_Total", new_threshold)
+                # sd_filename = os.path.join("Logs", f"sd_cmd_{self._rank:03d}.txt")
+                # os.remove(sd_filename)
+            elif self._timestep == ((self._options.ntcmd + self._options.nteb) / self._options.timesteps) and threshold_energy_Total != 0:
+                ener = []
+                with open(gamd_energy_filename, "r") as file:
+                    for line in file:
+                        line_split = line.split()
+                        if not line_split[0] == "#":
+                            if int(line_split[0]) > ((self._options.ntcmd + self._options.ntebprep) /
+                                                     self._options.timesteps):
+                                ener.append(float(line_split[1]))
+                sd = np.std(ener) * GAS_CONSTANT * self._temperature
+                sd_filename = os.path.join("Logs", f"sd_eq_{self._rank:03d}.txt")
+                with open(sd_filename, 'w') as sd_file:
+                    write_line = "{0:03d} {1:.2f} {2:.2f} {3:.2f}\n".format(
+                        self._rank, sd, threshold_energy_Total, self._temperature)
+                    sd_file.write(write_line)
+                count = 0
+                timeout = 0
+                while count != self._options.n_replicas: # add timeout
+                    if timeout > 1200:
+                        raise RuntimeError(f"The number of sd_eq files differs from the number of replicas.")
+                    time.sleep(5)
+                    timeout = timeout + 5
+                    count = len(fnmatch.filter(os.listdir("Logs"), 'sd_eq_*.*'))
+                    logger.debug(f"while 2: {count}")
+                sd_master =  os.path.join("Logs", "sd_eq.txt")                
+                with open(sd_master, 'w') as sd_master_file:
+                    for i in range(self._options.n_replicas):
+                        sd_filename = os.path.join("Logs", f"sd_eq_{i:03d}.txt")
+                        with open(sd_filename, 'r') as sd_file:
+                            sd_master_file.write(sd_file.readline())
+                time.sleep(5)
+                sd_acum = 0
+                temps = np.loadtxt(sd_master, dtype=np.dtype(
+                    [('w', int), ('x', float), ('y', float), ('z', float)]))
+                ref_threshold = 0
+                for i in np.flip(np.argsort(temps)):
+                    if ref_threshold == 0:
+                        ref_threshold = temps[i][2]
+                    else:
+                        sd_acum = sd_acum + temps[i][1] / 2
+                        if temps[i][0] == self._rank:
+                            new_threshold = (ref_threshold - sd_acum)
+                            self._simulation.integrator.setGlobalVariableByName(
+                                "threshold_energy_Total", new_threshold)
+                # sd_filename = os.path.join("Logs", f"sd_eq_{self._rank:03d}.txt")
+                # os.remove(sd_filename)
         # store in state
         state.positions = coordinates
         state.velocities = velocities

@@ -24,6 +24,12 @@ class RunOptions:
     param_mcmc_steps: int = 0
     mapper_mcmc_steps: int = 0
     pressure: float = 1.0 * u.bar
+    n_replicas: int = 2
+    enable_gamd: bool = False
+    ntcmdprep: int = 200000
+    ntcmd: int = 1000000
+    ntebprep: int = 200000
+    nteb: int = 1000000
 
     def __post_init__(self):
         if self.runner not in ["openmm", "fake_runner"]:

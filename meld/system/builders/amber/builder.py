@@ -27,6 +27,7 @@ import openmm as mm  # type: ignore
 from openmm import unit as u  # type: ignore
 import numpy as np  # type: ignore
 
+from gamd.integrator_factory import *
 
 @partial(dataclass, frozen=True)
 class AmberOptions:
@@ -57,6 +58,18 @@ class AmberOptions:
     enable_amap: bool = False
     amap_alpha_bias: float = 1.0
     amap_beta_bias: float = 1.0
+    enable_gamd: bool = False
+    boost_type_str: str = "upper-total"
+    conventional_md_prep: int = 100000
+    conventional_md: int = 1000000
+    gamd_equilibration_prep: int = 100000
+    gamd_equilibration: int = 1000000
+    total_simulation_length: int = 5000000
+    averaging_window_interval: int = 2500
+    sigma0p: float = 6.0
+    sigma0d: float = 6.0
+    random_seed: int = 0
+    friction_coefficient: float = 1.0
 
     def __post_init__(self):
         # Sanity checks for implicit and explicit solvent
@@ -242,11 +255,46 @@ class AmberSystemBuilder:
                 self.options.amap_beta_bias,
             )
 
-        integrator = _create_integrator(
-            self.options.default_temperature,
-            self.options.use_big_timestep,
-            self.options.use_bigger_timestep,
-        )
+        # Create integrator based on GaMD options
+        if self.options.enable_gamd:            
+            gamdIntegratorFactory = GamdIntegratorFactory()
+            if self.options.use_big_timestep:
+                logger.info("Creating custom integrator with 3.5 fs timestep")
+                timestep = 3.5 * u.femtosecond
+            elif self.options.use_bigger_timestep:
+                logger.info("Creating custom integrator with 4.5 fs timestep")
+                timestep = 4.5 * u.femtosecond
+            else:
+                logger.info("Creating custom integrator with 2.0 fs timestep")
+                timestep = 2.0 * u.femtosecond
+            result = gamdIntegratorFactory.get_integrator(
+                self.options.boost_type_str,
+                system,
+                self.options.default_temperature,
+                timestep,
+                self.options.conventional_md_prep,
+                self.options.conventional_md,
+                self.options.gamd_equilibration_prep,
+                self.options.gamd_equilibration,
+                self.options.total_simulation_length,
+                self.options.averaging_window_interval,
+                self.options.sigma0p,
+                self.options.sigma0d
+            )
+            [first_boost_group, second_boost_group, integrator,
+                first_boost_type, second_boost_type] = result
+            integrator.first_boost_group = first_boost_group
+            integrator.second_boost_group = second_boost_group
+            integrator.first_boost_type = first_boost_type
+            integrator.second_boost_type = second_boost_type
+            integrator.setRandomNumberSeed(self.options.random_seed)
+            integrator.setFriction(self.options.friction_coefficient)
+        else:
+            integrator = _create_integrator(
+                self.options.default_temperature,
+                self.options.use_big_timestep,
+                self.options.use_bigger_timestep,
+            )
 
         coords = crd.getPositions(asNumpy=True).value_in_unit(u.nanometer)
         try:

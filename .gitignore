@@ -52,3 +52,18 @@ meld/version.py
 .vscode/settings.json
 .mypy_cache
 monkeytype.sqlite3
+
+# Temp Data for programming
+/Data
+Logs/gamd_000.log
+Logs/remd_000.log
+Logs/sd_cmd_000.txt
+Logs/sd_cmd_001.txt
+Logs/sd_cmd.txt
+Logs/sd_eq_000.txt
+.vscode/launch.json
+sd_cmd_001.txt
+1ubq*
+copy_files.sh
+setup_CPI.py
+.gitignore
