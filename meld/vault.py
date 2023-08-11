@@ -14,6 +14,11 @@ from meld.system import state
 from meld.system import pdb_writer
 from meld.system import param_sampling
 from meld.system import options
+try:
+    from gamd.stage_integrator import GamdStageIntegrator
+    has_gamd = True
+except ImportError:
+    has_gamd = False
 
 import contextlib
 import os
@@ -81,6 +86,11 @@ class DataStore:
     _system_filename: str = "system.dat"
     _system_path: str = os.path.join(_data_dir, _system_filename)
     _system_backup_path: str = os.path.join(_backup_dir, _system_filename)
+
+    _integrator_filename: str = "integrator.dat"
+    _integrator_path: str = os.path.join(_data_dir, _integrator_filename)
+    _integrator_backup_path: str = os.path.join(
+        _backup_dir, _integrator_filename)
 
     _run_options_filename: str = "run_options.dat"
     _run_options_path: str = os.path.join(_data_dir, _run_options_filename)
@@ -874,6 +884,21 @@ class DataStore:
         with open(self._system_path, "wb") as system_file:
             pickle.dump(system, system_file)
 
+    if has_gamd == True:
+        def save_integrator(self, integrator: GamdStageIntegrator):
+            """
+            Save integrator.
+            """
+            self._can_save()
+            with open(self._integrator_path, "wb") as integrator_file:
+                pickle.dump(integrator, integrator_file)
+
+        def load_integrator(self) -> GamdStageIntegrator:
+            """ Load integrator """
+            path = self._integrator_backup_path if self._readonly_mode else self._integrator_path
+            with open(path, "rb") as integrator_file:
+                return _load_pickle(integrator_file)
+
     def load_system(self) -> interfaces.ISystem:
         """Load MELD system from disk"""
         path = self._system_backup_path if self._readonly_mode else self._system_path
@@ -917,7 +942,8 @@ class DataStore:
             self._backup(self._remd_runner_path, self._remd_runner_backup_path)
             self._backup(self._system_path, self._system_backup_path)
             self._backup(self._run_options_path, self._run_options_backup_path)
-
+            self._backup(self._integrator_path,
+                         self._integrator_backup_path)
     #
     # private methods
     #

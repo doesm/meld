@@ -12,7 +12,6 @@ from meld.interfaces import IState, ISystem
 from meld.system.options import RunOptions
 from typing import Optional, NamedTuple
 
-
 class REMDInfo(NamedTuple):
     remd_runner: LeaderReplicaExchangeRunner
     communicator: MPICommunicator
@@ -111,7 +110,11 @@ def setup_data_store(
     store.save_run_options(run_options)
     store.save_remd_runner(remd_info.remd_runner)
     store.save_communicator(remd_info.communicator)
-
+    if run_options.enable_gamd == True:  
+        integrator = system.integrator.__dict__.copy()
+        del integrator['this']
+        store.save_integrator(integrator)
+    
     def _setup_state(index):
         state = system.get_state_template()
         state.alpha = index / (remd_info.n_replicas - 1.0)
