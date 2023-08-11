@@ -60,7 +60,7 @@ class OpenMMRunner(interfaces.IRunner):
         meld_system: interfaces.ISystem,
         options: options.RunOptions,
         communicator: Optional[interfaces.ICommunicator] = None,
-        platform: str = None,
+        platform: Optional[str] = None,
     ):
         self._omm_system = meld_system.omm_system
         self._topology = meld_system.topology
@@ -101,6 +101,7 @@ class OpenMMRunner(interfaces.IRunner):
         self._extra_torsions = meld_system.extra_torsions
         self._parameter_manager = meld_system.param_sampler
         self._mapper = meld_system.mapper
+        self._density = meld_system.density
 
     def prepare_for_timestep(
         self, state: interfaces.IState, alpha: float, timestep: int
@@ -302,13 +303,24 @@ class OpenMMRunner(interfaces.IRunner):
                 }
             else:
                 raise RuntimeError(f"Unknown platform {self.platform}.")
-
+            # forcegroups = self._forcegroupify(sys)
             # create the simulation object
             self._simulation = _create_openmm_simulation(
                 self._topology, self._omm_system, self._integrator, platform, properties
             )
-
+            # forcegroups=self._forcegroupify(sys)
+            # self._simulation = _create_openmm_simulation(
+            #     prmtop.topology, sys, self._integrator, platform, properties
+            # )
             self._transformers_update(state)
+    def _forcegroupify(self,system):
+        forcegroups = {}
+        for i in range(system.getNumForces()):
+            # logger.info(f"{i}th force \n")
+            force = system.getForce(i)
+            force.setForceGroup(i)
+            forcegroups[force] = i
+        return forcegroups
 
     def _transformers_setup(self) -> None:
         trans_types = [
@@ -325,6 +337,7 @@ class OpenMMRunner(interfaces.IRunner):
             trans = tt(
                 self._parameter_manager,
                 self._mapper,
+                self._density,
                 self.builder_info,
                 self._options,
                 self._always_on_restraints,
@@ -490,7 +503,6 @@ class OpenMMRunner(interfaces.IRunner):
         # just store zeros for implicit solvent
         else:
             box_vector = np.zeros(3)
-
         # get the energy
         e_potential = (
             snapshot.getPotentialEnergy().value_in_unit(u.kilojoule / u.mole)
