@@ -29,9 +29,11 @@ import numpy as np  # type: ignore
 
 try:
     from gamd.integrator_factory import *
+
     has_gamd = True
 except:
     has_gamd = False
+
 
 @partial(dataclass, frozen=True)
 class AmberOptions:
@@ -259,17 +261,28 @@ class AmberSystemBuilder:
                 self.options.amap_beta_bias,
             )
 
-        # Create integrator based on GaMD options        
+        # Create integrator based on GaMD options
         if self.options.enable_gamd:
-            assert has_gamd == True, "Couldn't find library integrator_factory. Please, install GaMD for OpenMM"
-            allowed_modes = ["upper-dual", "lower-dual", "upper-total", "lower-total", "lower-dihedral", "upper-dihedral"]          
+            assert (
+                has_gamd == True
+            ), "Couldn't find library integrator_factory. Please, install GaMD for OpenMM"
+            allowed_modes = [
+                "upper-dual",
+                "lower-dual",
+                "upper-total",
+                "lower-total",
+                "lower-dihedral",
+                "upper-dihedral",
+            ]
             if self.options.boost_type_str in allowed_modes:
                 integrator = _create_gamd_integrator(
-                    self.options, 
-                    system, 
+                    self.options,
+                    system,
                 )
             else:
-                print(f'{self.options.boost_type_str} mode not supported. Check your boost_type_str option.')
+                raise Exception(
+                    f"{self.options.boost_type_str} mode not supported. Check your boost_type_str option."
+                )
         else:
             integrator = _create_integrator(
                 self.options.default_temperature,
@@ -575,6 +588,7 @@ def _create_integrator(temperature, use_big_timestep, use_bigger_timestep):
         timestep = 2.0 * u.femtosecond
     return mm.LangevinIntegrator(temperature * u.kelvin, 1.0 / u.picosecond, timestep)
 
+
 def _create_gamd_integrator(options, system):
     gamdIntegratorFactory = GamdIntegratorFactory()
     if options.use_big_timestep:
@@ -598,10 +612,15 @@ def _create_gamd_integrator(options, system):
         options.total_simulation_length,
         options.averaging_window_interval,
         options.sigma0p,
-        options.sigma0d
+        options.sigma0d,
     )
-    [first_boost_group, second_boost_group, integrator,
-        first_boost_type, second_boost_type] = result
+    [
+        first_boost_group,
+        second_boost_group,
+        integrator,
+        first_boost_type,
+        second_boost_type,
+    ] = result
     integrator.first_boost_group = first_boost_group
     integrator.second_boost_group = second_boost_group
     integrator.first_boost_type = first_boost_type
@@ -609,6 +628,7 @@ def _create_gamd_integrator(options, system):
     integrator.setRandomNumberSeed(options.random_seed)
     integrator.setFriction(options.friction_coefficient)
     return integrator
+
 
 def _add_chains(topology, chain_list):
     # Verify that the input from Amber only has one chain

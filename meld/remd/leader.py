@@ -158,13 +158,11 @@ class LeaderReplicaExchangeRunner:
             all_states = permute_states(
                 permutation_vector, all_states, system_runner, self.step
             )
-            
-            if system_runner._options.enable_gamd == True:
 
+            if system_runner._options.enable_gamd == True:
                 # if it's time, change thresholds
-                leader = True
+                leader: bool = True
                 gameld.change_thresholds(self.step, system_runner, communicator, leader)
-                
 
             # store everything
             store.save_states(all_states, self.step)

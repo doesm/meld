@@ -141,7 +141,9 @@ class MPICommunicator(interfaces.ICommunicator):
             return self._mpi_comm.scatter(None, root=0)
 
     @util.log_timing(logger)
-    def distribute_thresholds_to_workers(self, all_thresholds: List[float]) -> List[float]:
+    def distribute_thresholds_to_workers(
+        self, all_thresholds: List[float]
+    ) -> List[float]:
         """
         Distribute thresholds to workers
 
@@ -153,21 +155,25 @@ class MPICommunicator(interfaces.ICommunicator):
         """
         with _timeout(
             self._timeout,
-            RuntimeError(self._timeout_message.format("broadcast_thresholds_to_workers")),
+            RuntimeError(
+                self._timeout_message.format("broadcast_thresholds_to_workers")
+            ),
         ):
             return self._mpi_comm.scatter(all_thresholds, root=0)
 
     @util.log_timing(logger)
     def receive_thresholds_from_leader(self) -> List[float]:
         """
-        Receive a block of thresholds from leader.
+        Receive a threshold from leader.
 
         Returns:
             the threshold value for this worker
         """
         with _timeout(
             self._timeout,
-            RuntimeError(self._timeout_message.format("receive_thresholds_from_leader")),
+            RuntimeError(
+                self._timeout_message.format("receive_thresholds_from_leader")
+            ),
         ):
             return self._mpi_comm.scatter(None, root=0)
 
@@ -303,7 +309,7 @@ class MPICommunicator(interfaces.ICommunicator):
         ):
             energies = self._mpi_comm.gather(energies_on_leader, root=0)
             return np.concatenate(energies, axis=0)
-    
+
     @util.log_timing(logger)
     def send_energies_to_leader(self, energies: np.ndarray) -> None:
         """
@@ -320,11 +326,11 @@ class MPICommunicator(interfaces.ICommunicator):
             RuntimeError(self._timeout_message.format("send_energies_to_leader")),
         ):
             self._mpi_comm.gather(energies, root=0)
-            
+
     @util.log_timing(logger)
     def gather_thresholds_from_workers(
-        self, thresholds_on_leader: np.ndarray
-    ) -> np.ndarray:
+        self, thresholds_on_leader: List[List[float]]
+    ) -> List[List[float]]:
         """
         Receive threshold from each worker.
 
@@ -336,13 +342,15 @@ class MPICommunicator(interfaces.ICommunicator):
         """
         with _timeout(
             self._timeout,
-            RuntimeError(self._timeout_message.format("gather_thresholds_from_workers")),
+            RuntimeError(
+                self._timeout_message.format("gather_thresholds_from_workers")
+            ),
         ):
             thresholds = self._mpi_comm.gather(thresholds_on_leader, root=0)
             return thresholds
 
     @util.log_timing(logger)
-    def send_thresholds_to_leader(self, thresholds: np.ndarray) -> None:
+    def send_thresholds_to_leader(self, thresholds: List[List[float]]) -> None:
         """
         Send a block of thresholds to the leader.
 
@@ -372,7 +380,9 @@ class MPICommunicator(interfaces.ICommunicator):
 
             try:
                 slurm_gpus_per_node = os.environ["SLURM_GPUS_PER_NODE"]
-                logger.info("%s: SLURM_GPUS_PER_NODE is set - %s", hostname, slurm_gpus_per_node)
+                logger.info(
+                    "%s: SLURM_GPUS_PER_NODE is set - %s", hostname, slurm_gpus_per_node
+                )
                 gpus_per_node = True
             except KeyError:
                 logger.info("%s: SLURM_GPUS_PER_NODE is not set", hostname)
@@ -380,7 +390,9 @@ class MPICommunicator(interfaces.ICommunicator):
 
             try:
                 slurm_gpus_per_task = os.environ["SLURM_GPUS_PER_TASK"]
-                logger.info("%s: SLURM_GPUS_PER_TASK is set - %s", hostname, slurm_gpus_per_task)
+                logger.info(
+                    "%s: SLURM_GPUS_PER_TASK is set - %s", hostname, slurm_gpus_per_task
+                )
                 gpus_per_task = True
             except KeyError:
                 logger.info("%s: SLURM_GPUS_PER_TASK is not set", hostname)
@@ -396,7 +408,10 @@ class MPICommunicator(interfaces.ICommunicator):
                     raise RuntimeError("No cuda devices available")
                 else:
                     if len(visible_devices) == 1:
-                        logger.info("negotiate_device_id: visible_devices contains a single device: %d", visible_devices[0])
+                        logger.info(
+                            "negotiate_device_id: visible_devices contains a single device: %d",
+                            visible_devices[0],
+                        )
                         device_id = 0
                         logger.info("hostname: %s, device_id: %d", hostname, device_id)
                         return device_id
@@ -436,9 +451,9 @@ class MPICommunicator(interfaces.ICommunicator):
                     # Create two dicts:
                     #   available_devices - holds the device ids available on each host.  This
                     #                       is for for sanity checking.
-                    #   scatter_devices   - holds the device ids to be scattered.  
+                    #   scatter_devices   - holds the device ids to be scattered.
                     available_devices: Dict[str, List[int]] = {}
-                    scatter_devices:   Dict[str, List[int]] = {}
+                    scatter_devices: Dict[str, List[int]] = {}
 
                     # store the available devices on each node and build the list of device ids per
                     # node to be scattered.
@@ -446,15 +461,21 @@ class MPICommunicator(interfaces.ICommunicator):
                         if rank.host_name in available_devices:
                             if rank.devices != available_devices[rank.host_name]:
                                 if gpus_per_task:
-                                    # Each MPI rank will have its own, potentially different, device 
+                                    # Each MPI rank will have its own, potentially different, device
                                     # number so we just replace it here with a 0 (assuming --gpus-per-task=1 but
                                     # but this should work even if there were multiple gpus per task).
-                                    scatter_devices[rank.host_name] += list(range(len(rank.devices)))
+                                    scatter_devices[rank.host_name] += list(
+                                        range(len(rank.devices))
+                                    )
                                 else:
-                                    raise RuntimeError("GPU devices for host do not match")
+                                    raise RuntimeError(
+                                        "GPU devices for host do not match"
+                                    )
                         else:
                             available_devices[rank.host_name] = rank.devices
-                            scatter_devices[rank.host_name] = list(range(len(rank.devices)))
+                            scatter_devices[rank.host_name] = list(
+                                range(len(rank.devices))
+                            )
 
                     # Here we break the scatter_devices dict down into a list of devices (
                     # one per MPI rank) to be distributed (one device per rank) via mpi_scatter().
@@ -462,7 +483,7 @@ class MPICommunicator(interfaces.ICommunicator):
                     for rank in ranks:
                         try:
                             # pop off the first device_id for this host name
-                           device_ids.append(scatter_devices[rank.host_name].pop(0))
+                            device_ids.append(scatter_devices[rank.host_name].pop(0))
                         except IndexError:
                             logger.error("More mpi processes than GPUs")
                             raise RuntimeError("More mpi process than GPUs")

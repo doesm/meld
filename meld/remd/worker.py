@@ -101,8 +101,10 @@ class WorkerReplicaExchangeRunner:
 
             if system_runner._options.enable_gamd == True:
                 # if it's time, change thresholds
-                leader = False
-                gameld.change_thresholds(self._step, system_runner, communicator, leader)
+                leader: bool = False
+                gameld.change_thresholds(
+                    self._step, system_runner, communicator, leader
+                )
 
             self._step += 1
 

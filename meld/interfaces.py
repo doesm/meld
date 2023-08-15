@@ -79,7 +79,9 @@ class ICommunicator(ABC):
         pass
 
     @abstractmethod
-    def distribute_thresholds_to_workers(self, all_thresholds: List[float]) -> List[float]:
+    def distribute_thresholds_to_workers(
+        self, all_thresholds: List[float]
+    ) -> List[float]:
         """
         Distribute thresholds to workers
 
@@ -94,7 +96,7 @@ class ICommunicator(ABC):
     @abstractmethod
     def receive_thresholds_from_leader(self) -> List[float]:
         """
-        Receive a block of threshold from leader.
+        Receive a threshold from leader.
 
         Returns:
             the block of threshold values for this worker
@@ -127,9 +129,7 @@ class ICommunicator(ABC):
         pass
 
     @abstractmethod
-    def gather_states_from_workers(
-        self, state_on_leader: List[IState]
-    ) -> List[IState]:
+    def gather_states_from_workers(self, state_on_leader: List[IState]) -> List[IState]:
         """
         Receive states from all workers
 
@@ -151,9 +151,7 @@ class ICommunicator(ABC):
         pass
 
     @abstractmethod
-    def broadcast_all_states_to_workers(
-        self, states: Sequence[IState]
-    ) -> None:
+    def broadcast_all_states_to_workers(self, states: Sequence[IState]) -> None:
         """
         Broadcast all states to all workers.
 
@@ -207,8 +205,8 @@ class ICommunicator(ABC):
 
     @abstractmethod
     def gather_thresholds_from_workers(
-        self, thresholds_on_leader: np.ndarray
-    ) -> np.ndarray:
+        self, thresholds_on_leader: List[List[float]]
+    ) -> List[List[float]]:
         """
         Receive threshold from each worker.
 
@@ -221,7 +219,7 @@ class ICommunicator(ABC):
         pass
 
     @abstractmethod
-    def send_thresholds_to_leader(self, thresholds: np.ndarray) -> None:
+    def send_thresholds_to_leader(self, thresholds: List[List[float]]) -> None:
         """
         Send a block of thresholds to the leader.
 

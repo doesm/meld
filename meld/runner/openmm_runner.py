@@ -24,13 +24,14 @@ import os
 from genericpath import exists
 import fnmatch
 
-try: 
+try:
     from gamd.GamdLogger import GamdLogger
 except:
     pass
 
 from meld.vault import ENERGY_GROUPS
 import time
+
 logger = logging.getLogger(__name__)
 
 
@@ -229,13 +230,15 @@ class OpenMMRunner(interfaces.IRunner):
                 self._simulation.integrator.setGlobalVariableByName(
                     "kT", self._temperature * GAS_CONSTANT
                 )
-            elif hasattr(self._integrator, 'setTemperature'): 
+            elif hasattr(self._integrator, "setTemperature"):
                 self._integrator.setTemperature(self._temperature)
             elif self._options.enable_gamd == True:
-                thermal_energy = self._temperature * \
-                    u.BOLTZMANN_CONSTANT_kB * u.AVOGADRO_CONSTANT_NA
+                thermal_energy = (
+                    self._temperature * u.BOLTZMANN_CONSTANT_kB * u.AVOGADRO_CONSTANT_NA
+                )
                 self._simulation.integrator.setGlobalVariableByName(
-                    "thermal_energy", thermal_energy)
+                    "thermal_energy", thermal_energy
+                )
 
             if self._barostat:
                 self._simulation.context.setParameter(
@@ -313,7 +316,8 @@ class OpenMMRunner(interfaces.IRunner):
             #     prmtop.topology, sys, self._integrator, platform, properties
             # )
             self._transformers_update(state)
-    def _forcegroupify(self,system):
+
+    def _forcegroupify(self, system):
         forcegroups = {}
         for i in range(system.getNumForces()):
             # logger.info(f"{i}th force \n")
@@ -462,13 +466,14 @@ class OpenMMRunner(interfaces.IRunner):
 
         if self._options.enable_gamd == True:
             # Set the velocities for GaMD
-            self._simulation.context.setVelocitiesToTemperature(
-                self._temperature)
+            self._simulation.context.setVelocitiesToTemperature(self._temperature)
         else:
             # set the velocities
             # check to see if velocities initialized to zero
             if np.all(velocities._value == 0.0):
-                logger.info("All velocities are zero, this is likely because input files do not contain velocity info. Generating velocities from Maxwell-Boltzmann distribution")
+                logger.info(
+                    "All velocities are zero, this is likely because input files do not contain velocity info. Generating velocities from Maxwell-Boltzmann distribution"
+                )
                 self._simulation.context.setVelocitiesToTemperature(self._temperature)
             else:
                 self._simulation.context.setVelocities(velocities)
@@ -508,15 +513,14 @@ class OpenMMRunner(interfaces.IRunner):
             snapshot.getPotentialEnergy().value_in_unit(u.kilojoule / u.mole)
             / GAS_CONSTANT
             / self._temperature
-        )        
+        )
 
         if self._options.enable_gamd == True:
-            gamd_logger = self.register_gamd_logger(
-                self._integrator, self._simulation)
+            gamd_logger = self.register_gamd_logger(self._integrator, self._simulation)
             gamd_logger.mark_energies()
             gamd_logger.write_to_gamd_log(self._timestep)
             gamd_logger.close()
-           
+
         # store in state
         state.positions = coordinates
         state.velocities = velocities
@@ -527,18 +531,21 @@ class OpenMMRunner(interfaces.IRunner):
         return state
 
     def register_gamd_logger(self, integrator, simulation):
-
-        gamd_log_filename = os.path.join(
-            "Logs", f"gamd_{self._rank:03d}.log")  
+        gamd_log_filename = os.path.join("Logs", f"gamd_{self._rank:03d}.log")
         if exists(gamd_log_filename):
             write_mode = "a"
         else:
             write_mode = "w"
-        gamd_logger = GamdLogger(gamd_log_filename, write_mode, integrator,
-                                 simulation, integrator.first_boost_type,
-                                 integrator.first_boost_group,
-                                 integrator.second_boost_type,
-                                 integrator.second_boost_group)
+        gamd_logger = GamdLogger(
+            gamd_log_filename,
+            write_mode,
+            integrator,
+            simulation,
+            integrator.first_boost_type,
+            integrator.first_boost_group,
+            integrator.second_boost_type,
+            integrator.second_boost_group,
+        )
         if write_mode == "w":
             gamd_logger.write_header()
         return gamd_logger
